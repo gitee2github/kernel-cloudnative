@@ -174,6 +174,12 @@ int do_sys_settimeofday64(const struct timespec64 *tv, const struct timezone *tz
 	if (tv && !timespec64_valid_settod(tv))
 		return -EINVAL;
 
+	if (current->nsproxy->mnt_ns != init_task.nsproxy->mnt_ns) {
+		printk("settimeofday64 pid: %d, comm: %s: set time in container is not allowed.\n",
+			current->pid, current->comm);
+		return -EPERM;
+	}
+
 	error = security_settime64(tv, tz);
 	if (error)
 		return error;
