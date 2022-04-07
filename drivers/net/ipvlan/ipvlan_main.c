@@ -1114,6 +1114,7 @@ static int ipvlan_status_show(struct seq_file *f, void *p)
 	rcu_read_lock();
 	list_for_each_entry_rcu(ipvlan, &g_port->ipvlans, pnode) {
 
+		seq_printf(f, "\tslave net id: %u\n", dev_net(ipvlan->dev)->ns.inum);
 		seq_printf(f, "\tslave %s \n",
                            ipvlan->dev->name);
 
