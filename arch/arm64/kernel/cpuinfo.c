@@ -299,7 +299,7 @@ static const struct id_part hisi_part[] = {
 };
 
 static const struct id_part phytium_part[] = {
-    { 0x663, "S250/64 C100" },
+    { 0x663, "S2500/64 C100" },
     { -1, "unknown" },
 };
 
