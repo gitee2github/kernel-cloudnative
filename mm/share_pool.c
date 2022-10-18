@@ -3810,10 +3810,12 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 	if (!mm)
 		return 0;
 
+	down_read(&sp_group_sem);
 	down_read(&mm->mmap_lock);
 	master = mm->sp_group_master;
 	if (!master) {
 		up_read(&mm->mmap_lock);
+		up_read(&sp_group_sem);
 		return 0;
 	}
 
@@ -3848,6 +3850,7 @@ int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 		seq_putc(m, '\n');
 	}
 	up_read(&mm->mmap_lock);
+	up_read(&sp_group_sem);
 	return 0;
 }
 
@@ -4128,6 +4131,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 			"PID", "COMM", "SP_ALLOC", "SP_K2U", "SP_RES", "Non-SP_RES",
 			"Non-SP_Shm", "VIRT");
 
+	down_read(&sp_group_sem);
 	mutex_lock(&master_list_lock);
 	list_for_each_entry(master, &master_list, list_node) {
 		proc_stat = &master->instat;
@@ -4143,6 +4147,7 @@ static int proc_usage_show(struct seq_file *seq, void *offset)
 				page2kb(master->mm->total_vm));
 	}
 	mutex_unlock(&master_list_lock);
+	up_read(&sp_group_sem);
 
 	return 0;
 }
