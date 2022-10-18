@@ -1523,7 +1523,7 @@ int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id)
 	if (unlikely(IS_ERR(node))) {
 		up_write(&spg->rw_lock);
 		ret = PTR_ERR(node);
-		goto out_drop_spg_node;
+		goto out_drop_group;
 	}
 
 	ret = insert_spg_node(spg, node);
