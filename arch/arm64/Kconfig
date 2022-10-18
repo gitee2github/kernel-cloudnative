@@ -2092,6 +2092,13 @@ config ASCEND_SHARE_POOL
 	  This feature allows multiple processes to share virtual memory both
 	  in kernel and user level, which is only enabled for ascend platform.
 
+config ASCEND_CLEAR_HUGEPAGE_DISABLE
+	bool "Disable clear hugepage"
+	default n
+	help
+	  Disable clear hugepage when alloc hugepages to improve the hugepage
+	  application performance.
+
 endif
 
 endmenu
