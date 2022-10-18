@@ -969,6 +969,13 @@ config MEMORY_RELIABLE
 	  To enable this function, mirrored memory is needed and
 	  "kernelcore=reliable" need to be added in kernel parameters.
 
+config EXPORT_COLLECT_PROCS
+       bool "Export the function collect_procs()"
+       default n
+       help
+         Export this function to collect the processes who have the page
+         mapped via collect_procs().
+
 source "mm/damon/Kconfig"
 
 endmenu

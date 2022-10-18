@@ -541,8 +541,13 @@ static void collect_procs_file(struct page *page, struct list_head *to_kill,
 /*
  * Collect the processes who have the corrupted page mapped to kill.
  */
+#ifdef CONFIG_EXPORT_COLLECT_PROCS
 void collect_procs(struct page *page, struct list_head *tokill,
 				int force_early)
+#else
+static void collect_procs(struct page *page, struct list_head *tokill,
+				int force_early)
+#endif
 {
 	if (!page->mapping)
 		return;
@@ -552,7 +557,9 @@ void collect_procs(struct page *page, struct list_head *tokill,
 	else
 		collect_procs_file(page, tokill, force_early);
 }
+#ifdef CONFIG_EXPORT_COLLECT_PROCS
 EXPORT_SYMBOL_GPL(collect_procs);
+#endif
 
 static const char *action_name[] = {
 	[MF_IGNORED] = "Ignored",
