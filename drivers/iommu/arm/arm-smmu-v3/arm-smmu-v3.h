@@ -722,7 +722,10 @@ struct arm_smmu_device {
 #define ARM_SMMU_OPT_SKIP_PREFETCH	(1 << 0)
 #define ARM_SMMU_OPT_PAGE0_REGS_ONLY	(1 << 1)
 #define ARM_SMMU_OPT_MSIPOLL		(1 << 2)
+#define ARM_SMMU_OPT_MESSAGE_BASED_SPI	(1 << 3)
 	u32				options;
+
+	u64				spi_base;
 
 	union {
 		u32			nr_ecmdq;
