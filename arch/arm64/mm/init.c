@@ -717,6 +717,9 @@ void ascend_enable_all_features(void)
 		cgroup_memory_nokmem = false;
 	}
 
+	if (IS_ENABLED(CONFIG_ASCEND_FDM))
+		ascend_fdm_enable = true;
+
 #ifdef CONFIG_ARM64_PSEUDO_NMI
 	extern bool enable_pseudo_nmi;
 	enable_pseudo_nmi = true;
