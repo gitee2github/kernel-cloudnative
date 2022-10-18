@@ -84,7 +84,7 @@ DEFINE_PER_CPU(struct mem_cgroup *, int_active_memcg);
 static bool cgroup_memory_nosocket;
 
 /* Kernel memory accounting disabled */
-static bool cgroup_memory_nokmem = true;
+bool cgroup_memory_nokmem = true;
 
 /* Whether the swap controller is active */
 #ifdef CONFIG_MEMCG_SWAP
@@ -3053,6 +3053,11 @@ int __memcg_kmem_charge_page(struct page *page, gfp_t gfp, int order)
 
 	objcg = get_obj_cgroup_from_current();
 	if (objcg) {
+		if (!mem_cgroup_is_root(objcg->memcg) && is_cdm_node(page_to_nid(page))) {
+			obj_cgroup_put(objcg);
+			return 0;
+		}
+
 		ret = obj_cgroup_charge_pages(objcg, gfp, 1 << order);
 		if (!ret) {
 			page->memcg_data = (unsigned long)objcg |
@@ -3072,6 +3077,7 @@ int __memcg_kmem_charge_page(struct page *page, gfp_t gfp, int order)
 void __memcg_kmem_uncharge_page(struct page *page, int order)
 {
 	struct obj_cgroup *objcg;
+	struct mem_cgroup *memcg;
 	unsigned int nr_pages = 1 << order;
 
 	if (!PageMemcgKmem(page))
@@ -3079,6 +3085,12 @@ void __memcg_kmem_uncharge_page(struct page *page, int order)
 
 	objcg = __page_objcg(page);
 	obj_cgroup_uncharge_pages(objcg, nr_pages);
+
+	memcg = get_mem_cgroup_from_objcg(objcg);
+	if (!mem_cgroup_is_root(memcg))
+		memcg_oom_recover(memcg);
+	css_put(&memcg->css);
+
 	page->memcg_data = 0;
 	obj_cgroup_put(objcg);
 }
@@ -7008,6 +7020,9 @@ int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask)
 
 	if (!memcg)
 		memcg = get_mem_cgroup_from_mm(mm);
+
+	if (!mem_cgroup_is_root(memcg) && is_cdm_node(page_to_nid(page)))
+		goto out;
 
 	ret = try_charge(memcg, gfp_mask, nr_pages);
 	if (ret)

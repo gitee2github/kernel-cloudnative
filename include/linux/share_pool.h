@@ -10,11 +10,18 @@
 #include <linux/hashtable.h>
 #include <linux/numa.h>
 #include <linux/jump_label.h>
+#include <linux/kabi.h>
 
 #define SP_HUGEPAGE		(1 << 0)
 #define SP_HUGEPAGE_ONLY	(1 << 1)
 #define SP_DVPP			(1 << 2)
 #define SP_SPEC_NODE_ID		(1 << 3)
+#define SP_PROT_RO		(1 << 16)
+/*
+ * SP_PROT_FOCUS should used with SP_PROT_RO,
+ * to alloc a memory within sharepool ro memory.
+ */
+#define SP_PROT_FOCUS		(1 << 17)
 
 #define DEVICE_ID_BITS		4UL
 #define DEVICE_ID_MASK		((1UL << DEVICE_ID_BITS) - 1UL)
@@ -24,7 +31,7 @@
 #define NODE_ID_SHIFT		(DEVICE_ID_SHIFT + DEVICE_ID_BITS)
 
 #define SP_FLAG_MASK		(SP_HUGEPAGE | SP_HUGEPAGE_ONLY | SP_DVPP | \
-				 SP_SPEC_NODE_ID | \
+				 SP_SPEC_NODE_ID | SP_PROT_RO | SP_PROT_FOCUS | \
 				(DEVICE_ID_MASK << DEVICE_ID_SHIFT) | \
 				(NODE_ID_MASK << NODE_ID_SHIFT))
 
@@ -38,26 +45,16 @@
 #define SPG_ID_AUTO_MIN 100000
 #define SPG_ID_AUTO_MAX 199999
 #define SPG_ID_AUTO     200000  /* generate group id automatically */
+#define SPG_ID_LOCAL_MIN	200001
+#define SPG_ID_LOCAL_MAX	299999
+
+#define SPG_FLAG_NON_DVPP	(1 << 0)
 
 #define MAX_DEVID 8	/* the max num of Da-vinci devices */
 
-extern int sysctl_share_pool_hugepage_enable;
-
-extern int sysctl_ac_mode;
-
-extern int sysctl_sp_debug_mode;
-
 extern struct static_key_false share_pool_enabled_key;
 
-extern int sysctl_share_pool_map_lock_enable;
-
-extern int sysctl_sp_compact_enable;
-extern unsigned long sysctl_sp_compact_interval;
-extern unsigned long sysctl_sp_compact_interval_max;
-extern int sysctl_sp_perf_alloc;
-
-extern int sysctl_sp_perf_k2u;
-
+#ifdef __GENKSYMS__
 /* we estimate an sp-group ususally contains at most 64 sp-group */
 #define SP_SPG_HASH_BITS 6
 
@@ -100,22 +97,43 @@ struct sp_proc_stat {
 	atomic64_t k2u_size;
 };
 
+/*
+ * address space management
+ */
+struct sp_mapping {
+	unsigned long flag;
+	atomic_t user;
+	unsigned long start[MAX_DEVID];
+	unsigned long end[MAX_DEVID];
+	struct rb_root area_root;
+
+	struct rb_node *free_area_cache;
+	unsigned long cached_hole_size;
+	unsigned long cached_vstart;
+
+	/* list head for all groups attached to this mapping, dvpp mapping only */
+	struct list_head group_head;
+};
+
 /* Processes in the same sp_group can share memory.
  * Memory layout for share pool:
  *
- * |-------------------- 8T -------------------|---|------ 8T ------------|
- * |		Device 0	   |  Device 1 |...|                      |
- * |----------------------------------------------------------------------|
- * |------------- 16G -------------|    16G    |   |                      |
- * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp normal memory    |
- * |     sp        |    sp         |     |     |   |                      |
- * |----------------------------------------------------------------------|
+ * |-------------------- 8T -------------------|---|---64G---|----- 8T-64G -----|
+ * |		Device 0	   |  Device 1 |...|         |                  |
+ * |-----------------------------------------------|---------|------------------|
+ * |------------- 16G -------------|    16G    |   |         |                  |
+ * | DVPP GROUP0   | DVPP GROUP1   | ... | ... |...|  sp ro  | sp normal memory |
+ * |     sp        |    sp         |     |     |   |         |                  |
+ * |----------------------------------------------------------------------------|
  *
  * The host SVM feature reserves 8T virtual memory by mmap, and due to the
  * restriction of DVPP, while SVM and share pool will both allocate memory
  * for DVPP, the memory have to be in the same 32G range.
  *
- * Share pool reserves 16T memory, with 8T for normal uses and 8T for DVPP.
+ * Share pool reserves 16T memory, 8T-64G for normal uses, 64G for ro memory
+ * and 8T for DVPP.
+ * Within this 64G ro memory, user application will never have write permission
+ * to this memory address.
  * Within this 8T DVPP memory, SVM will call sp_config_dvpp_range() to
  * tell us which 16G memory range is reserved for share pool .
  *
@@ -124,6 +142,7 @@ struct sp_proc_stat {
  */
 struct sp_group {
 	int		 id;
+	unsigned long	 flag;
 	struct file	 *file;
 	struct file	 *file_hugetlb;
 	/* number of process in this group */
@@ -141,6 +160,10 @@ struct sp_group {
 	atomic_t	 use_count;
 	/* protect the group internal elements, except spa_list */
 	struct rw_semaphore	rw_lock;
+	/* list node for dvpp mapping */
+	struct list_head	mnode;
+	struct sp_mapping	*dvpp;
+	struct sp_mapping	*normal;
 };
 
 /* a per-process(per mm) struct which manages a sp_group_node list */
@@ -154,6 +177,11 @@ struct sp_group_master {
 	struct list_head node_list;
 	struct mm_struct *mm;
 	struct sp_proc_stat *stat;
+	/*
+	 * Used to apply for the shared pool memory of the current process.
+	 * For example, sp_alloc non-share memory or k2task.
+	 */
+	KABI_EXTEND(struct sp_group *local)
 };
 
 /*
@@ -171,6 +199,7 @@ struct sp_group_node {
 	struct sp_group *spg;
 	unsigned long prot;
 };
+#endif
 
 struct sp_walk_data {
 	struct page **pages;
@@ -178,6 +207,7 @@ struct sp_walk_data {
 	unsigned long uva_aligned;
 	unsigned long page_size;
 	bool is_hugepage;
+	bool is_page_type_set;
 	pmd_t *pmd;
 };
 
@@ -185,17 +215,29 @@ struct sp_walk_data {
 
 #define MMAP_TOP_4G_SIZE		0x100000000UL
 
-/* 8T size */
-#define MMAP_SHARE_POOL_NORMAL_SIZE	0x80000000000UL
+/* 8T - 64G size */
+#define MMAP_SHARE_POOL_NORMAL_SIZE	0x7F000000000UL
+/* 64G */
+#define MMAP_SHARE_POOL_RO_SIZE		0x1000000000UL
 /* 8T size*/
 #define MMAP_SHARE_POOL_DVPP_SIZE	0x80000000000UL
 /* 16G size */
 #define MMAP_SHARE_POOL_16G_SIZE	0x400000000UL
-#define MMAP_SHARE_POOL_SIZE		(MMAP_SHARE_POOL_NORMAL_SIZE + MMAP_SHARE_POOL_DVPP_SIZE)
-/* align to 2M hugepage size, and MMAP_SHARE_POOL_TOP_16G_START should be align to 16G */
-#define MMAP_SHARE_POOL_END		((TASK_SIZE - MMAP_SHARE_POOL_DVPP_SIZE) & ~((1 << 21) - 1))
-#define MMAP_SHARE_POOL_START		(MMAP_SHARE_POOL_END - MMAP_SHARE_POOL_SIZE)
-#define MMAP_SHARE_POOL_16G_START	(MMAP_SHARE_POOL_END - MMAP_SHARE_POOL_DVPP_SIZE)
+/* skip 8T for stack */
+#define MMAP_SHARE_POOL_SKIP		0x80000000000UL
+#define MMAP_SHARE_POOL_END		(TASK_SIZE - MMAP_SHARE_POOL_SKIP)
+#define MMAP_SHARE_POLL_DVPP_END	(MMAP_SHARE_POOL_END)
+/* MMAP_SHARE_POOL_DVPP_START should be align to 16G */
+#define MMAP_SHARE_POOL_DVPP_START	(MMAP_SHARE_POLL_DVPP_END - MMAP_SHARE_POOL_DVPP_SIZE)
+#define MMAP_SHARE_POOL_RO_END		(MMAP_SHARE_POOL_DVPP_START)
+#define MMAP_SHARE_POOL_RO_START	(MMAP_SHARE_POOL_RO_END - MMAP_SHARE_POOL_RO_SIZE)
+#define MMAP_SHARE_POOL_NORMAL_END	(MMAP_SHARE_POOL_RO_START)
+#define MMAP_SHARE_POOL_NORMAL_START	(MMAP_SHARE_POOL_NORMAL_END - MMAP_SHARE_POOL_NORMAL_SIZE)
+#define MMAP_SHARE_POOL_START		(MMAP_SHARE_POOL_NORMAL_START)
+
+#define MMAP_SHARE_POOL_DYNAMIC_DVPP_BASE	0x100000000000ULL
+#define MMAP_SHARE_POOL_DYNAMIC_DVPP_END	(MMAP_SHARE_POOL_DYNAMIC_DVPP_BASE + \
+						MMAP_SHARE_POOL_16G_SIZE * 64)
 
 #ifdef CONFIG_ASCEND_SHARE_POOL
 
@@ -223,8 +265,8 @@ extern int proc_sp_group_state(struct seq_file *m, struct pid_namespace *ns,
 extern void *sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
 extern void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int spg_id);
 
-extern int sp_free(unsigned long addr);
-extern int mg_sp_free(unsigned long addr);
+extern int sp_free(unsigned long addr, int id);
+extern int mg_sp_free(unsigned long addr, int id);
 
 extern void *sp_make_share_k2u(unsigned long kva, unsigned long size,
 			unsigned long sp_flags, int pid, int spg_id);
@@ -235,7 +277,7 @@ extern void *sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
 extern void *mg_sp_make_share_u2k(unsigned long uva, unsigned long size, int pid);
 
 extern int sp_unshare(unsigned long va, unsigned long size, int pid, int spg_id);
-extern int mg_sp_unshare(unsigned long va, unsigned long size);
+extern int mg_sp_unshare(unsigned long va, unsigned long size, int id);
 
 extern int sp_walk_page_range(unsigned long uva, unsigned long size,
 	struct task_struct *tsk, struct sp_walk_data *sp_walk_data);
@@ -254,8 +296,8 @@ extern bool mg_sp_config_dvpp_range(size_t start, size_t size, int device_id, in
 extern bool is_sharepool_addr(unsigned long addr);
 extern bool mg_is_sharepool_addr(unsigned long addr);
 
-extern int mg_sp_group_add_task(int pid, unsigned long prot, int spg_id);
-extern int sp_group_add_task(int pid, int spg_id);
+extern int sp_id_of_current(void);
+extern int mg_sp_id_of_current(void);
 
 extern void sp_area_drop(struct vm_area_struct *vma);
 extern int sp_group_exit(struct mm_struct *mm);
@@ -289,12 +331,6 @@ static inline bool sp_check_vm_share_pool(unsigned long vm_flags)
 		return true;
 
 	return false;
-}
-
-static inline void sp_dump_stack(void)
-{
-	if (sysctl_sp_debug_mode)
-		dump_stack();
 }
 
 static inline bool is_vmalloc_sharepool(unsigned long vm_flags)
@@ -362,12 +398,12 @@ static inline void *mg_sp_alloc(unsigned long size, unsigned long sp_flags, int 
 	return NULL;
 }
 
-static inline int sp_free(unsigned long addr)
+static inline int sp_free(unsigned long addr, int id)
 {
 	return -EPERM;
 }
 
-static inline int mg_sp_free(unsigned long addr)
+static inline int mg_sp_free(unsigned long addr, int id)
 {
 	return -EPERM;
 }
@@ -399,11 +435,20 @@ static inline int sp_unshare(unsigned long va, unsigned long size, int pid, int 
 	return -EPERM;
 }
 
-static inline int mg_sp_unshare(unsigned long va, unsigned long size)
+static inline int mg_sp_unshare(unsigned long va, unsigned long size, int id)
 {
 	return -EPERM;
 }
 
+static inline int sp_id_of_current(void)
+{
+	return -EPERM;
+}
+
+static inline int mg_sp_id_of_current(void)
+{
+	return -EPERM;
+}
 
 static inline void sp_init_mm(struct mm_struct *mm)
 {
@@ -461,15 +506,6 @@ static inline bool is_sharepool_addr(unsigned long addr)
 static inline bool mg_is_sharepool_addr(unsigned long addr)
 {
 	return false;
-}
-
-static inline struct sp_proc_stat *sp_get_proc_stat_ref(struct mm_struct *mm)
-{
-	return NULL;
-}
-
-static inline void sp_proc_stat_drop(struct sp_proc_stat *stat)
-{
 }
 
 static inline void spa_overview_show(struct seq_file *seq)

@@ -30,6 +30,7 @@
 #include <linux/pci.h>
 #include <linux/pci-ats.h>
 #include <linux/platform_device.h>
+#include <linux/irq.h>
 
 #include <linux/amba/bus.h>
 
@@ -125,6 +126,7 @@ struct arm_smmu_ctx_desc quiet_cd = { 0 };
 static struct arm_smmu_option_prop arm_smmu_options[] = {
 	{ ARM_SMMU_OPT_SKIP_PREFETCH, "hisilicon,broken-prefetch-cmd" },
 	{ ARM_SMMU_OPT_PAGE0_REGS_ONLY, "cavium,cn9900-broken-page1-regspace"},
+	{ ARM_SMMU_OPT_MESSAGE_BASED_SPI, "hisilicon,message-based-spi"},
 	{ 0, NULL},
 };
 
@@ -406,7 +408,8 @@ static void arm_smmu_cmdq_build_sync_cmd(u64 *cmd, struct arm_smmu_device *smmu,
 	 * Beware that Hi16xx adds an extra 32 bits of goodness to its MSI
 	 * payload, so the write will zero the entire command on that platform.
 	 */
-	if (smmu->options & ARM_SMMU_OPT_MSIPOLL) {
+	if (smmu->options & ARM_SMMU_OPT_MSIPOLL &&
+	    !(smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI)) {
 		ent.sync.msiaddr = q->base_dma + Q_IDX(&q->llq, prod) *
 				   q->ent_dwords * 8;
 	}
@@ -781,7 +784,8 @@ static int __arm_smmu_cmdq_poll_until_consumed(struct arm_smmu_device *smmu,
 static int arm_smmu_cmdq_poll_until_sync(struct arm_smmu_device *smmu,
 					 struct arm_smmu_ll_queue *llq)
 {
-	if (smmu->options & ARM_SMMU_OPT_MSIPOLL)
+	if (smmu->options & ARM_SMMU_OPT_MSIPOLL &&
+	    !(smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI))
 		return __arm_smmu_cmdq_poll_until_msi(smmu, llq);
 
 	return __arm_smmu_cmdq_poll_until_consumed(smmu, llq);
@@ -4872,6 +4876,37 @@ static void arm_smmu_setup_unique_irqs(struct arm_smmu_device *smmu, bool resume
 	}
 }
 
+static void arm_smmu_setup_message_based_spi(struct arm_smmu_device *smmu)
+{
+	struct irq_desc *desc;
+	u32 event_hwirq, gerror_hwirq, pri_hwirq;
+
+	desc = irq_to_desc(smmu->gerr_irq);
+	gerror_hwirq = desc->irq_data.hwirq;
+	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_GERROR_IRQ_CFG0);
+	writel_relaxed(gerror_hwirq, smmu->base + ARM_SMMU_GERROR_IRQ_CFG1);
+	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+		       smmu->base + ARM_SMMU_GERROR_IRQ_CFG2);
+
+	desc = irq_to_desc(smmu->evtq.q.irq);
+	event_hwirq = desc->irq_data.hwirq;
+	writeq_relaxed(smmu->spi_base, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG0);
+	writel_relaxed(event_hwirq, smmu->base + ARM_SMMU_EVTQ_IRQ_CFG1);
+	writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+		       smmu->base + ARM_SMMU_EVTQ_IRQ_CFG2);
+
+	if (smmu->features & ARM_SMMU_FEAT_PRI) {
+		desc = irq_to_desc(smmu->priq.q.irq);
+		pri_hwirq = desc->irq_data.hwirq;
+
+		writeq_relaxed(smmu->spi_base,
+			       smmu->base + ARM_SMMU_PRIQ_IRQ_CFG0);
+		writel_relaxed(pri_hwirq, smmu->base + ARM_SMMU_PRIQ_IRQ_CFG1);
+		writel_relaxed(ARM_SMMU_MEMATTR_DEVICE_nGnRE,
+			       smmu->base + ARM_SMMU_PRIQ_IRQ_CFG2);
+	}
+}
+
 static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu, bool resume)
 {
 	int ret, irq;
@@ -4903,6 +4938,9 @@ static int arm_smmu_setup_irqs(struct arm_smmu_device *smmu, bool resume)
 
 	if (smmu->features & ARM_SMMU_FEAT_PRI)
 		irqen_flags |= IRQ_CTRL_PRIQ_IRQEN;
+
+	if (smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI)
+		arm_smmu_setup_message_based_spi(smmu);
 
 	/* Enable interrupt generation on the SMMU */
 	ret = arm_smmu_write_reg_sync(smmu, irqen_flags,
@@ -5624,6 +5662,14 @@ static int arm_smmu_device_dt_probe(struct platform_device *pdev,
 		ret = 0;
 
 	parse_driver_options(smmu);
+
+	if (smmu->options & ARM_SMMU_OPT_MESSAGE_BASED_SPI) {
+		if (of_property_read_u64(dev->of_node, "iommu-spi-base",
+					 &smmu->spi_base)) {
+			dev_err(dev, "missing irq base address\n");
+			ret = -EINVAL;
+		}
+	}
 
 	if (of_dma_is_coherent(dev->of_node))
 		smmu->features |= ARM_SMMU_FEAT_COHERENCY;
