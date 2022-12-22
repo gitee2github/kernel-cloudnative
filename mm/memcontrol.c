@@ -1265,7 +1265,7 @@ again:
 			break;
 		victim = parent;
 		chosen = NULL;
-		chosen_priority = DEF_PRIORITY + 1;
+		chosen_priority = MEMCG_OOM_PRIORITY + 1;
 		list_for_each_entry_rcu(pos, &parent->children, sibling) {
 			struct mem_cgroup *tmp, *chosen_mem;
 
