@@ -1397,12 +1397,10 @@ bool memcg_prio_oom_select_bad_process(struct oom_control *oc)
 
 	memcg = memcg_get_prio_oom_root();
 
-	if (!memcg)
+	if (!memcg || !css_tryget_online(&memcg->css))
 		return false;
 
 	printk("prio oom root 0x%llx\n", (int64_t)memcg);
-
-	victim = memcg;
 
 retry:
 
@@ -1433,6 +1431,7 @@ out:
 		iter->next_reset = NULL;
 		css_put(&iter->css);
 	}
+	css_put(&memcg->css);
 	return true;
 }
 /**
