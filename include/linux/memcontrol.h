@@ -29,6 +29,9 @@ struct obj_cgroup;
 struct page;
 struct mm_struct;
 struct kmem_cache;
+struct oom_control;
+
+#define MEMCG_OOM_PRIORITY 12
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
@@ -285,6 +288,12 @@ struct mem_cgroup {
 	/* protected by memcg_oom_lock */
 	bool		oom_lock;
 	int		under_oom;
+
+	/* memcg priority oom */
+	bool use_priority_oom;
+	int priority;
+	int num_oom_skip;
+	struct mem_cgroup *next_reset;
 
 	int	swappiness;
 	/* OOM-Killer disable */
@@ -738,6 +747,20 @@ static inline void mem_cgroup_protection(struct mem_cgroup *root,
 
 void mem_cgroup_calculate_protection(struct mem_cgroup *root,
 				     struct mem_cgroup *memcg);
+/* memcg priority*/
+void mem_cgroup_account_oom_skip(struct task_struct *task,
+		struct oom_control *oc);
+
+bool memcg_prio_oom_select_bad_process(struct oom_control *oc);
+
+static inline bool root_memcg_use_priority_oom(void)
+{
+	if (mem_cgroup_disabled())
+		return false;
+	if (root_mem_cgroup->use_priority_oom)
+		return true;
+	return false;
+}
 
 static inline bool mem_cgroup_supports_protection(struct mem_cgroup *memcg)
 {
@@ -1304,6 +1327,22 @@ int mem_cgroup_force_empty(struct mem_cgroup *memcg);
 #define MEM_CGROUP_ID_MAX	0
 
 struct mem_cgroup;
+
+/* memcg priority */
+static inline void mem_cgroup_account_oom_skip(struct task_struct *task,
+		struct oom_control *oc)
+{
+}
+
+static inline bool memcg_prio_oom_select_bad_process(struct oom_control *oc)
+{
+	return false;
+}
+
+static inline bool root_memcg_use_priority_oom(void)
+{
+	return false;
+}
 
 static inline struct mem_cgroup *page_memcg(struct page *page)
 {
