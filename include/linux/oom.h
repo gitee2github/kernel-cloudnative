@@ -56,7 +56,6 @@ struct oom_control {
 	/* memcg oom priority */
 	struct mem_cgroup *reset_list;
 	int num_skip;
-	bool use_priority_oom;
 };
 
 extern struct mutex oom_lock;

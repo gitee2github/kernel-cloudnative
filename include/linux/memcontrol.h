@@ -34,6 +34,13 @@ struct oom_control;
 #define MEMCG_OOM_PRIORITY_HIGH 10
 #define MEMCG_OOM_PRIORITY_LOW -10
 
+enum memcg_prio_oom_flag {
+	MEMCG_OOM_PRIO_NONE = 0,	// default value
+	MEMCG_OOM_PRIO_ROOT,		// this memcg is prio oom root
+	MEMCG_OOM_PRIO_TAGGED,		// this memcg is tagged
+	MEMCG_OOM_PRIO_ALL,		// prio oom root and tagged
+};
+
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
 	MEMCG_SWAP = NR_VM_NODE_STAT_ITEMS,
@@ -291,7 +298,7 @@ struct mem_cgroup {
 	int		under_oom;
 
 	/* memcg priority oom */
-	bool use_priority_oom;
+	int use_priority_oom;
 	int priority;
 	int num_oom_skip;
 	struct mem_cgroup *next_reset;
@@ -753,6 +760,8 @@ void mem_cgroup_account_oom_skip(struct task_struct *task,
 		struct oom_control *oc);
 
 bool memcg_prio_oom_select_bad_process(struct oom_control *oc);
+
+bool memcg_prio_oom_tagged(struct oom_control *oc);
 
 static inline bool root_memcg_use_priority_oom(void)
 {
@@ -1336,6 +1345,11 @@ static inline void mem_cgroup_account_oom_skip(struct task_struct *task,
 }
 
 static inline bool memcg_prio_oom_select_bad_process(struct oom_control *oc)
+{
+	return false;
+}
+
+bool memcg_prio_oom_tagged(struct oom_control *oc)
 {
 	return false;
 }
