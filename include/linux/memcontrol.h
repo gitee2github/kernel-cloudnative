@@ -31,7 +31,8 @@ struct mm_struct;
 struct kmem_cache;
 struct oom_control;
 
-#define MEMCG_OOM_PRIORITY 12
+#define MEMCG_OOM_PRIORITY_HIGH 10
+#define MEMCG_OOM_PRIORITY_LOW -10
 
 /* Cgroup-specific page state, on top of universal node page state */
 enum memcg_stat_item {
