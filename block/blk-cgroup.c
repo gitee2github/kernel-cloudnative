@@ -991,6 +991,10 @@ static struct cftype blkcg_files[] = {
 
 static struct cftype blkcg_legacy_files[] = {
 	{
+		.name = "stat",
+		.seq_show = blkcg_print_stat,
+	},
+	{
 		.name = "reset_stats",
 		.write_u64 = blkcg_reset_stats,
 	},
