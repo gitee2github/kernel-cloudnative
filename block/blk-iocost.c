@@ -3407,7 +3407,9 @@ err:
 	return ret;
 }
 
-
+//WEIGHT_ONE		= 1 << 16,
+#define WEIGHT_INT(x) ((x) >> 16)
+#define WEIGHT_FRAC(x) WEIGHT_INT(((x) & (WEIGHT_ONE-1)) * 100)
 static u64 ioc_stat_prfill(struct seq_file *sf, struct blkg_policy_data *pd,
 			  int off)
 {
@@ -3420,10 +3422,11 @@ static u64 ioc_stat_prfill(struct seq_file *sf, struct blkg_policy_data *pd,
 		return 0;
 
 	seq_printf(sf, "%s is_active=%d active=%u inuse=%u "
-		   "hweight_active=%u hweight_inuse=%u vrate=%llu\n",
+		   "hweight_active=%u.%02u hweight_inuse=%u.%02u vrate=%llu\n",
 		   dname, !list_empty(&iocg->active_list),
-		   iocg->active, iocg->inuse,
-		   iocg->hweight_active, iocg->hweight_inuse,
+		   iocg->active, iocg->inuse,               \
+		   WEIGHT_INT(iocg->hweight_active), WEIGHT_FRAC(iocg->hweight_active),\
+		   WEIGHT_INT(iocg->hweight_inuse), WEIGHT_FRAC(iocg->hweight_inuse), \
 		   (unsigned long long)atomic64_read(&ioc->vtime_rate));
 
 	return 0;
