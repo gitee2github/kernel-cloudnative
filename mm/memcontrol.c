@@ -84,7 +84,7 @@ DEFINE_PER_CPU(struct mem_cgroup *, int_active_memcg);
 static bool cgroup_memory_nosocket;
 
 /* Kernel memory accounting disabled */
-bool cgroup_memory_nokmem = true;
+bool cgroup_memory_nokmem = false;  //enable kmem accouning by default
 
 /* Whether the swap controller is active */
 #ifdef CONFIG_MEMCG_SWAP
