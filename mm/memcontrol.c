@@ -3778,6 +3778,11 @@ static ssize_t mem_cgroup_write(struct kernfs_open_file *of,
 		switch (MEMFILE_TYPE(of_cft(of)->private)) {
 		case _MEM:
 			ret = mem_cgroup_resize_max(memcg, nr_pages, false);
+			if (memcg_update_tcp_max(memcg, nr_pages)) {
+				pr_warn("kmem tcp max set to %lu failed, cgroup:", nr_pages);
+				pr_cont_cgroup_path(memcg->css.cgroup);
+			}
+
 			break;
 		case _MEMSWAP:
 			ret = mem_cgroup_resize_max(memcg, nr_pages, true);
