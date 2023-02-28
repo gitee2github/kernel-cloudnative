@@ -4,6 +4,7 @@
 #include <linux/poll.h>
 #include <linux/ns_common.h>
 #include <linux/fs_pin.h>
+#include <linux/binfmts.h>
 
 struct mnt_namespace {
 	atomic_t		count;
@@ -23,6 +24,9 @@ struct mnt_namespace {
 	u64 event;
 	unsigned int		mounts; /* # of mounts in the namespace */
 	unsigned int		pending_mounts;
+#ifdef CONFIG_COREDUMP
+	char			core_pattern[CORENAME_MAX_SIZE]; /* per mnt_namespace core pattern */
+#endif
 } __randomize_layout;
 
 struct mnt_pcp {

@@ -52,10 +52,10 @@
 #include "internal.h"
 
 #include <trace/events/sched.h>
+#include "mount.h"
 
 int core_uses_pid;
 unsigned int core_pipe_limit;
-char core_pattern[CORENAME_MAX_SIZE] = "core";
 static int core_name_size = CORENAME_MAX_SIZE;
 
 struct core_name {
@@ -198,7 +198,7 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 			   size_t **argv, int *argc)
 {
 	const struct cred *cred = current_cred();
-	const char *pat_ptr = core_pattern;
+	const char *pat_ptr = current->nsproxy->mnt_ns->core_pattern;
 	int ispipe = (*pat_ptr == '|');
 	bool was_space = false;
 	int pid_in_pattern = 0;
@@ -211,7 +211,7 @@ static int format_corename(struct core_name *cn, struct coredump_params *cprm,
 	cn->corename[0] = '\0';
 
 	if (ispipe) {
-		int argvs = sizeof(core_pattern) / 2;
+		int argvs = CORENAME_MAX_SIZE / 2;
 		(*argv) = kmalloc_array(argvs, sizeof(**argv), GFP_KERNEL);
 		if (!(*argv))
 			return -ENOMEM;

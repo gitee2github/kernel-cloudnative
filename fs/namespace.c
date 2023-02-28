@@ -3305,6 +3305,9 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool a
 	spin_lock_init(&new_ns->ns_lock);
 	new_ns->user_ns = get_user_ns(user_ns);
 	new_ns->ucounts = ucounts;
+#ifdef CONFIG_COREDUMP
+	strncpy(new_ns->core_pattern, "core", CORENAME_MAX_SIZE);
+#endif
 	return new_ns;
 }
 
@@ -3333,6 +3336,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		return new_ns;
 
 	namespace_lock();
+#ifdef CONFIG_COREDUMP
+	strncpy(new_ns->core_pattern, ns->core_pattern, CORENAME_MAX_SIZE);
+#endif
 	/* First pass: copy the tree topology */
 	copy_flags = CL_COPY_UNBINDABLE | CL_EXPIRE;
 	if (user_ns != ns->user_ns)
