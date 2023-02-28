@@ -3,12 +3,17 @@
  */
 
 #include "ipvlan.h"
+#include <linux/seq_file.h>
+#include <linux/debugfs.h>
 
 static int one = 1;
 static int delay_max = 100;
 /* set loop queue length from 0 to 10 big packets(65536) */
 static int qlen_min;
 static int qlen_max = 655360;
+
+static struct ipvl_port *g_port __read_mostly;
+static struct dentry *ipvlan_debugfs __read_mostly;
 
 int sysctl_ipvlan_loop_qlen = 131072;
 int sysctl_ipvlan_loop_delay = 10;
@@ -112,6 +117,7 @@ static int ipvlan_port_create(struct net_device *dev)
 	if (!port)
 		return -ENOMEM;
 
+	g_port = port;
 	write_pnet(&port->pnet, dev_net(dev));
 	port->dev = dev;
 	port->mode = IPVLAN_MODE_L3;
@@ -150,6 +156,7 @@ static void ipvlan_port_destroy(struct net_device *dev)
 		kfree_skb(skb);
 	}
 	ida_destroy(&port->ida);
+	g_port = NULL;
 	kfree(port);
 }
 
@@ -1094,6 +1101,40 @@ static struct notifier_block ipvlan_addr6_vtor_notifier_block __read_mostly = {
 };
 #endif
 
+static int ipvlan_status_show(struct seq_file *f, void *p)
+{
+	struct ipvl_addr *addr;
+	struct ipvl_dev *ipvlan;
+
+	if(!g_port)
+		return 0;
+
+	seq_printf(f, "master: %s mode: %d \n",
+                           g_port->dev->name,g_port->mode);
+	rcu_read_lock();
+	list_for_each_entry_rcu(ipvlan, &g_port->ipvlans, pnode) {
+
+		seq_printf(f, "\tslave net id: %u\n", dev_net(ipvlan->dev)->ns.inum);
+		seq_printf(f, "\tslave %s \n",
+                           ipvlan->dev->name);
+
+		list_for_each_entry_rcu(addr, &ipvlan->addrs, anode) {
+			if(addr->atype == IPVL_IPV4) {
+				seq_printf(f, "\t\taddrv4 :%pI4 \n",
+					&addr->ip4addr.s_addr);
+			}
+			else {
+				seq_printf(f, "\t\taddrv6 :%pI6 \n",
+					&addr->ip6addr.s6_addr);
+			}
+                }
+	}
+	rcu_read_unlock();
+	return 0;
+}
+
+DEFINE_SHOW_ATTRIBUTE(ipvlan_status);
+
 static int __init ipvlan_init_module(void)
 {
 	int err;
@@ -1125,6 +1166,9 @@ static int __init ipvlan_init_module(void)
 	err = ipvlan_sysctl_init();
 	if (err < 0)
 		pr_err("ipvlan proc init failed, continue\n");
+
+	ipvlan_debugfs = debugfs_create_file("ipvlan_status", 0444, NULL, NULL,
+			&ipvlan_status_fops);
 	return 0;
 error:
 	unregister_inetaddr_notifier(&ipvlan_addr4_notifier_block);
@@ -1153,6 +1197,7 @@ static void __exit ipvlan_cleanup_module(void)
 	    &ipvlan_addr6_vtor_notifier_block);
 #endif
 	ipvlan_sysctl_exit();
+	debugfs_remove(ipvlan_debugfs);
 }
 
 module_init(ipvlan_init_module);
