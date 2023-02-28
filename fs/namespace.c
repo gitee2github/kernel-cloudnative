@@ -3305,6 +3305,9 @@ static struct mnt_namespace *alloc_mnt_ns(struct user_namespace *user_ns, bool a
 	spin_lock_init(&new_ns->ns_lock);
 	new_ns->user_ns = get_user_ns(user_ns);
 	new_ns->ucounts = ucounts;
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	new_ns->fuse_cgwb = 0;
+#endif
 #ifdef CONFIG_COREDUMP
 	strncpy(new_ns->core_pattern, "core", CORENAME_MAX_SIZE);
 #endif
@@ -3336,6 +3339,9 @@ struct mnt_namespace *copy_mnt_ns(unsigned long flags, struct mnt_namespace *ns,
 		return new_ns;
 
 	namespace_lock();
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	new_ns->fuse_cgwb = ns->fuse_cgwb;
+#endif
 #ifdef CONFIG_COREDUMP
 	strncpy(new_ns->core_pattern, ns->core_pattern, CORENAME_MAX_SIZE);
 #endif
@@ -4127,6 +4133,14 @@ static struct user_namespace *mntns_owner(struct ns_common *ns)
 {
 	return to_mnt_ns(ns)->user_ns;
 }
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+bool fuse_cgwb_enabled(struct task_struct *task)
+{
+	return task->nsproxy->mnt_ns->fuse_cgwb > 0;
+}
+EXPORT_SYMBOL(fuse_cgwb_enabled);
+#endif
 
 const struct proc_ns_operations mntns_operations = {
 	.name		= "mnt",
