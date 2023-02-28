@@ -183,6 +183,12 @@ enum sysctl_writes_mode {
 };
 
 static enum sysctl_writes_mode sysctl_writes_strict = SYSCTL_WRITES_STRICT;
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+int sysctl_fuse_cgwb(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos);
+#endif
+
 #endif /* CONFIG_PROC_SYSCTL */
 
 #if defined(HAVE_ARCH_PICK_MMAP_LAYOUT) || \
@@ -1094,6 +1100,25 @@ static int proc_dopipe_max_size(struct ctl_table *table, int write,
 				 do_proc_dopipe_max_size_conv, NULL);
 }
 
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+int sysctl_fuse_cgwb(struct ctl_table *table, int write,
+		void __user *buffer, size_t *lenp, loff_t *ppos)
+{
+	struct ctl_table t;
+	int err;
+	struct mnt_namespace *mnt = current->nsproxy->mnt_ns;
+	int state = mnt->fuse_cgwb;
+	t = *table;
+	t.data = &state;
+	err = proc_dointvec_minmax(&t, write, buffer, lenp, ppos);
+	if (err < 0)
+		return err;
+	if (write)
+		mnt->fuse_cgwb = state;
+	return err;
+}
+#endif
+
 static void validate_coredump_safety(void)
 {
 #ifdef CONFIG_COREDUMP
@@ -1955,6 +1980,17 @@ static struct ctl_table kern_table[] = {
 	},
 #endif
 #ifdef CONFIG_PROC_SYSCTL
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	{
+		.procname       = "enable_fuse_cgwb",
+		.data           = NULL,
+		.maxlen         = sizeof(unsigned int),
+		.mode           = 0644,
+		.proc_handler   = sysctl_fuse_cgwb,
+		.extra1         = SYSCTL_ZERO,
+		.extra2         = SYSCTL_ONE,
+	},
+#endif
 	{
 		.procname	= "tainted",
 		.maxlen 	= sizeof(long),

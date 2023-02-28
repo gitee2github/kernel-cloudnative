@@ -34,6 +34,10 @@ DEFINE_MUTEX(fuse_mutex);
 
 static int set_global_limit(const char *val, const struct kernel_param *kp);
 
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+extern bool fuse_cgwb_enabled(struct task_struct *task);
+#endif
+
 unsigned max_user_bgreq;
 module_param_call(max_user_bgreq, set_global_limit, param_get_uint,
 		  &max_user_bgreq, 0644);
@@ -525,6 +529,9 @@ enum {
 	OPT_ALLOW_OTHER,
 	OPT_MAX_READ,
 	OPT_BLKSIZE,
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	OPT_CGWB,
+#endif
 	OPT_ERR
 };
 
@@ -538,6 +545,9 @@ static const struct fs_parameter_spec fuse_fs_parameters[] = {
 	fsparam_flag	("allow_other",		OPT_ALLOW_OTHER),
 	fsparam_u32	("max_read",		OPT_MAX_READ),
 	fsparam_u32	("blksize",		OPT_BLKSIZE),
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	fsparam_flag	("cgwb",		OPT_CGWB),
+#endif
 	fsparam_string	("subtype",		OPT_SUBTYPE),
 	{}
 };
@@ -622,6 +632,11 @@ static int fuse_parse_param(struct fs_context *fc, struct fs_parameter *param)
 		ctx->blksize = result.uint_32;
 		break;
 
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	case OPT_CGWB:
+		ctx->cgwb = true;
+		break;
+#endif
 	default:
 		return -EINVAL;
 	}
@@ -657,6 +672,10 @@ static int fuse_show_options(struct seq_file *m, struct dentry *root)
 			seq_printf(m, ",max_read=%u", fc->max_read);
 		if (sb->s_bdev && sb->s_blocksize != FUSE_DEFAULT_BLKSIZE)
 			seq_printf(m, ",blksize=%lu", sb->s_blocksize);
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+		if (fc->cgwb)
+			seq_puts(m, ",cgwb");
+#endif
 	}
 #ifdef CONFIG_FUSE_DAX
 	if (fc->dax)
@@ -1170,13 +1189,30 @@ static int fuse_bdi_init(struct fuse_conn *fc, struct super_block *sb)
 		bdi_put(sb->s_bdi);
 		sb->s_bdi = &noop_backing_dev_info;
 	}
-	err = super_setup_bdi_name(sb, "%u:%u%s", MAJOR(fc->dev),
-				   MINOR(fc->dev), suffix);
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	if (fuse_cgwb_enabled(current) || fc->cgwb) {
+		err = super_setup_bdi_name(sb, "%u:%u:%lu%s", MAJOR(fc->dev),
+				MINOR(fc->dev), jiffies, suffix);
+	} else {
+#endif
+		err = super_setup_bdi_name(sb, "%u:%u%s", MAJOR(fc->dev),
+				MINOR(fc->dev), suffix);
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	}
+#endif
+
 	if (err)
 		return err;
 
 	/* fuse does it's own writeback accounting */
 	sb->s_bdi->capabilities &= ~BDI_CAP_WRITEBACK_ACCT;
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	if (fuse_cgwb_enabled(current) || fc->cgwb)
+		sb->s_bdi->capabilities |= BDI_CAP_WRITEBACK;
+	else
+#endif
 	sb->s_bdi->capabilities |= BDI_CAP_STRICTLIMIT;
 
 	/*
@@ -1380,6 +1416,9 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 
 	fc->dev = sb->s_dev;
 	fm->sb = sb;
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	fc->cgwb = ctx->cgwb;
+#endif
 	err = fuse_bdi_init(fc, sb);
 	if (err)
 		goto err_dev_free;
@@ -1388,6 +1427,11 @@ int fuse_fill_super_common(struct super_block *sb, struct fuse_fs_context *ctx)
 	if (sb->s_flags & SB_POSIXACL)
 		fc->dont_mask = 1;
 	sb->s_flags |= SB_POSIXACL;
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	if (fuse_cgwb_enabled(current) || fc->cgwb)
+		sb->s_iflags |= SB_I_CGROUPWB;
+#endif
 
 	fc->default_permissions = ctx->default_permissions;
 	fc->allow_other = ctx->allow_other;

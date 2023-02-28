@@ -24,6 +24,9 @@ struct mnt_namespace {
 	u64 event;
 	unsigned int		mounts; /* # of mounts in the namespace */
 	unsigned int		pending_mounts;
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	unsigned int		fuse_cgwb;
+#endif
 #ifdef CONFIG_COREDUMP
 	char			core_pattern[CORENAME_MAX_SIZE]; /* per mnt_namespace core pattern */
 #endif

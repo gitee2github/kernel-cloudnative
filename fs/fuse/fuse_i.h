@@ -512,6 +512,9 @@ struct fuse_fs_context {
 	bool no_force_umount:1;
 	bool legacy_opts_show:1;
 	bool dax:1;
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+	bool cgwb:1;
+#endif
 	unsigned int max_read;
 	unsigned int blksize;
 	const char *subtype;
@@ -762,6 +765,10 @@ struct fuse_conn {
 
 	/* Auto-mount submounts announced by the server */
 	unsigned int auto_submounts:1;
+
+#ifdef CONFIG_CGROUP_FUSE_WRITEBACK
+        unsigned int cgwb:1;
+#endif
 
 	/** The number of requests waiting for completion */
 	atomic_t num_waiting;
