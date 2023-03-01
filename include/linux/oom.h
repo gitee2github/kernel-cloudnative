@@ -52,6 +52,11 @@ struct oom_control {
 
 	/* Used to print the constraint info. */
 	enum oom_constraint constraint;
+
+	/* memcg oom priority */
+	struct mem_cgroup *reset_list;
+	int num_skip;
+	bool use_priority_oom;
 };
 
 extern struct mutex oom_lock;
@@ -122,6 +127,8 @@ extern bool oom_killer_disable(signed long timeout);
 extern void oom_killer_enable(void);
 
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
+
+extern int oom_evaluate_task(struct task_struct *task, void *arg);
 
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
