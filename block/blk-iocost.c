@@ -645,6 +645,8 @@ static const struct ioc_params autop[] = {
 	},
 };
 
+unsigned int sysctl_iocost_disable_surplus = 0;
+
 /*
  * vrate adjust percentages indexed by ioc->busy_level.  We adjust up on
  * vtime credit shortage and down on device saturation.
@@ -2254,7 +2256,7 @@ static void ioc_timer_fn(struct timer_list *timer)
 			 * below 2. It's not gonna make a meaningful difference
 			 * anyway.
 			 */
-			if (new_hwi < hwm && hwa >= 2) {
+			if ( (new_hwi < hwm && hwa >= 2) && !sysctl_iocost_disable_surplus) {
 				iocg->hweight_donating = hwa;
 				iocg->hweight_after_donation = new_hwi;
 				list_add(&iocg->surplus_list, &surpluses);
@@ -2283,8 +2285,11 @@ static void ioc_timer_fn(struct timer_list *timer)
 		}
 	}
 
-	if (!list_empty(&surpluses) && nr_shortages)
+	if (!list_empty(&surpluses) && nr_shortages) {
+
+		WARN_ON_ONCE(sysctl_iocost_disable_surplus);
 		transfer_surpluses(&surpluses, &now);
+	}
 
 	commit_weights(ioc);
 

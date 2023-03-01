@@ -87,6 +87,10 @@ extern unsigned int sysctl_sched_autogroup_enabled;
 extern unsigned int sysctl_mem_protection_use_min;
 #endif
 
+#ifdef CONFIG_BLK_CGROUP_IOCOST
+extern unsigned int sysctl_iocost_disable_surplus;
+#endif
+
 extern int sysctl_sched_rr_timeslice;
 extern int sched_rr_timeslice;
 

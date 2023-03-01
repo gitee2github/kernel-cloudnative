@@ -2781,6 +2781,17 @@ static struct ctl_table kern_table[] = {
                 .extra2         = SYSCTL_ONE,
        },
 #endif
+#ifdef CONFIG_BLK_CGROUP_IOCOST
+       {
+                .procname       = "iocost_disable_surplus",
+                .data           = &sysctl_iocost_disable_surplus,
+                .maxlen         = sizeof(int),
+                .mode           = 0600,
+                .proc_handler   = proc_dointvec_minmax,
+                .extra1         = SYSCTL_ZERO,
+                .extra2         = SYSCTL_ONE,
+       },
+#endif
 	{ }
 };
 
