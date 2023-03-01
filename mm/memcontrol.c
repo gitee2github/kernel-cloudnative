@@ -1261,8 +1261,12 @@ again:
 
 		parent_mem = mem_cgroup_from_css(parent);
 
-		if (parent->nr_procs <= parent_mem->num_oom_skip)
+		if (parent->nr_procs <= parent_mem->num_oom_skip) {
+			printk("\tskip memcg(0x%llx),nr_procs(%d) skip(%d)\n",
+				(int64_t)parent_mem, parent->nr_procs,
+				parent_mem->num_oom_skip);
 			break;
+		}
 		victim = parent;
 		chosen = NULL;
 		chosen_priority = MEMCG_OOM_PRIORITY + 1;
@@ -1271,8 +1275,11 @@ again:
 
 			tmp = mem_cgroup_from_css(pos);
 
-			if (pos->nr_procs <= tmp->num_oom_skip)
+			if (pos->nr_procs <= tmp->num_oom_skip) {
+				printk("\tskip memcg(0x%llx),nr_procs(%d) skip(%d)\n",
+					(int64_t)tmp, pos->nr_procs, tmp->num_oom_skip);
 				continue;
+			}
 			if (tmp->priority > chosen_priority)
 				continue;
 			if (tmp->priority < chosen_priority) {
