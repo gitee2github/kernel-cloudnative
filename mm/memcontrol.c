@@ -1184,6 +1184,20 @@ static void invalidate_reclaim_iterators(struct mem_cgroup *dead_memcg)
 }
 
 /* memcg oom priority */
+
+static struct mem_cgroup * prio_oom_root;
+
+struct mem_cgroup * memcg_get_prio_oom_root(void)
+{
+	if (mem_cgroup_disabled())
+		return NULL;
+
+	if (prio_oom_root && (prio_oom_root->use_priority_oom & MEMCG_OOM_PRIO_ROOT))
+		return prio_oom_root;
+
+	return NULL;
+}
+
 /*
  * do_mem_cgroup_account_oom_skip - account the memcg with OOM-unkillable task
  * @memcg: mem_cgroup struct with OOM-unkillable task
@@ -1206,9 +1220,11 @@ static void do_mem_cgroup_account_oom_skip(struct mem_cgroup *memcg,
 
 	if (unlikely(!memcg))
 		return;
-	root = oc->memcg;
+
+	root = memcg_get_prio_oom_root();
+
 	if (!root)
-		root = root_mem_cgroup;
+		return;
 
 	css = &memcg->css;
 	while (css) {
@@ -1373,19 +1389,6 @@ void lruvec_memcg_debug(struct lruvec *lruvec, struct page *page)
 }
 #endif
 
-static struct mem_cgroup * prio_oom_root;
-
-struct mem_cgroup * memcg_get_prio_oom_root(void)
-{
-	if (mem_cgroup_disabled())
-		return NULL;
-
-	if (prio_oom_root && (prio_oom_root->use_priority_oom & MEMCG_OOM_PRIO_ROOT))
-		return prio_oom_root;
-
-	return NULL;
-}
-
 bool memcg_remove_prio_oom_root(struct mem_cgroup * memcg)
 {
 	if (mem_cgroup_disabled())
@@ -1419,7 +1422,7 @@ retry:
 
 	victim = mem_cgroup_select_victim_cgroup(memcg);
 	if (!victim) {
-		if (mem_cgroup_is_root(memcg) && oc->num_skip)
+		if (oc->num_skip)
 			oc->chosen = (void *)-1UL;
 		goto out;
 	}
@@ -1427,7 +1430,7 @@ retry:
 	pr_info("victim (0x%llx) nr_procs %d ", (int64_t)victim, victim->css.nr_procs);
 	pr_cont_cgroup_path(victim->css.cgroup);
 
-	mem_cgroup_scan_tasks(victim, oom_evaluate_task, oc);
+	mem_cgroup_scan_tasks(victim, prio_oom_evaluate_task, oc);
 
 	css_put(&victim->css);
 	if (oc->chosen == (void *)-1UL)

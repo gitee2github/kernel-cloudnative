@@ -128,6 +128,7 @@ extern void oom_killer_enable(void);
 extern struct task_struct *find_lock_task_mm(struct task_struct *p);
 
 extern int oom_evaluate_task(struct task_struct *task, void *arg);
+extern int prio_oom_evaluate_task(struct task_struct *task, void *arg);
 
 /* sysctls */
 extern int sysctl_oom_dump_tasks;
