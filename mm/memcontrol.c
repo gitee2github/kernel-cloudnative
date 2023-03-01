@@ -1269,7 +1269,7 @@ again:
 		}
 		victim = parent;
 		chosen = NULL;
-		chosen_priority = MEMCG_OOM_PRIORITY + 1;
+		chosen_priority = MEMCG_OOM_PRIORITY_HIGH + 1;
 		list_for_each_entry_rcu(pos, &parent->children, sibling) {
 			struct mem_cgroup *tmp, *chosen_mem;
 
@@ -5695,7 +5695,7 @@ static int mem_cgroup_priority_oom_write(struct cgroup_subsys_state *css,
        return 0;
 }
 
-static u64 mem_cgroup_priority_read(struct cgroup_subsys_state *css,
+static s64 mem_cgroup_priority_read(struct cgroup_subsys_state *css,
                struct cftype *cft)
 {
        struct mem_cgroup *memcg = mem_cgroup_from_css(css);
@@ -5704,11 +5704,11 @@ static u64 mem_cgroup_priority_read(struct cgroup_subsys_state *css,
 }
 
 static int mem_cgroup_priority_write(struct cgroup_subsys_state *css,
-               struct cftype *cft, u64 val)
+               struct cftype *cft, s64 val)
 {
        struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
-       if (val > MEMCG_OOM_PRIORITY)
+       if (val > MEMCG_OOM_PRIORITY_HIGH || val < MEMCG_OOM_PRIORITY_LOW)
                return -EINVAL;
 
        memcg->priority = val;
@@ -5782,8 +5782,8 @@ static struct cftype mem_cgroup_legacy_files[] = {
 	},
 	{
 		.name = "oom_prio.priority",
-		.read_u64 = mem_cgroup_priority_read,
-		.write_u64 = mem_cgroup_priority_write,
+		.read_s64 = mem_cgroup_priority_read,
+		.write_s64 = mem_cgroup_priority_write,
 		.flags = CFTYPE_NOT_ON_ROOT,
 	},
 	{
@@ -7358,8 +7358,8 @@ static struct cftype memory_files[] = {
 	{
 		.name = "oom_prio.priority",
 		.flags = CFTYPE_NOT_ON_ROOT,
-		.read_u64 = mem_cgroup_priority_read,
-		.write_u64 = mem_cgroup_priority_write,
+		.read_s64 = mem_cgroup_priority_read,
+		.write_s64 = mem_cgroup_priority_write,
 	},
 	{
 		.name = "oom_prio.root",
