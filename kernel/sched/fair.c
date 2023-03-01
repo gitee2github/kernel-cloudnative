@@ -136,6 +136,7 @@ static DEFINE_PER_CPU_SHARED_ALIGNED(struct hrtimer, qos_overload_timer);
 static DEFINE_PER_CPU(int, qos_cpu_overload);
 unsigned int sysctl_overload_detect_period = 5000;  /* in ms */
 unsigned int sysctl_offline_wait_interval = 100;  /* in ms */
+unsigned int sysctl_offline_smt_expelle = 0;  /* in ms */
 static int unthrottle_qos_cfs_rqs(int cpu);
 #endif
 
@@ -7570,6 +7571,8 @@ static bool qos_smt_check_siblings_status(int this_cpu)
 
 static bool qos_smt_expelled(int this_cpu)
 {
+	if (!sysctl_offline_smt_expelle)
+		return false;
 	/*
 	 * The qos_smt_status of siblings cpu is online, and current cpu only has
 	 * offline tasks enqueued, there is not suitable task,
@@ -7626,6 +7629,9 @@ static void qos_smt_send_ipi(int this_cpu)
 
 static void qos_smt_expel(int this_cpu, struct task_struct *p)
 {
+	if (!sysctl_offline_smt_expelle)
+		return false;
+
 	if (qos_smt_update_status(p))
 		qos_smt_send_ipi(this_cpu);
 }

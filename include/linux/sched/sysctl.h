@@ -77,6 +77,7 @@ extern unsigned int sysctl_sched_cfs_bandwidth_slice;
 #ifdef CONFIG_QOS_SCHED
 extern unsigned int sysctl_overload_detect_period;
 extern unsigned int sysctl_offline_wait_interval;
+extern unsigned int sysctl_offline_smt_expelle;
 #endif
 
 #ifdef CONFIG_SCHED_AUTOGROUP
