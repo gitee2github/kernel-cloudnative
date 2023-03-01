@@ -1377,13 +1377,13 @@ struct mem_cgroup * memcg_get_prio_oom_root(void)
 	return NULL;
 }
 
-bool memcg_release_prio_oom_root(struct mem_cgroup * memcg)
+bool memcg_remove_prio_oom_root(struct mem_cgroup * memcg)
 {
 	if (mem_cgroup_disabled())
 		return false;
 
 	if (prio_oom_root == memcg) {
-		printk("release prio oom root 0x%llx\n", (int64_t)prio_oom_root);
+		printk("remove prio oom root on memcg(0x%llx)\n", (int64_t)prio_oom_root);
 		prio_oom_root->use_priority_oom = 0;
 		prio_oom_root = NULL;
 		return true;
@@ -6242,6 +6242,7 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 	struct mem_cgroup_event *event, *tmp;
 
+	memcg_remove_prio_oom_root(memcg);
 	/*
 	 * Unregister events and notify userspace.
 	 * Notify userspace about cgroup removing only after rmdir of cgroup
@@ -6269,8 +6270,6 @@ static void mem_cgroup_css_offline(struct cgroup_subsys_state *css)
 static void mem_cgroup_css_released(struct cgroup_subsys_state *css)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
-
-	memcg_release_prio_oom_root(memcg);
 
 	invalidate_reclaim_iterators(memcg);
 }
