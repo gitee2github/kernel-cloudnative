@@ -749,22 +749,36 @@ static inline bool mem_cgroup_supports_protection(struct mem_cgroup *memcg)
 
 }
 
+#ifdef CONFIG_MEMCG
+extern unsigned int sysctl_mem_protection_use_min;
+#endif
+
 static inline bool mem_cgroup_below_low(struct mem_cgroup *memcg)
 {
 	if (!mem_cgroup_supports_protection(memcg))
 		return false;
-
-	return READ_ONCE(memcg->memory.elow) >=
-		page_counter_read(&memcg->memory);
+#ifdef CONFIG_MEMCG
+        if (sysctl_mem_protection_use_min)
+                return READ_ONCE(memcg->memory.low) >=
+                        page_counter_read(&memcg->memory);
+        else
+#endif
+                return READ_ONCE(memcg->memory.elow) >=
+                        page_counter_read(&memcg->memory);
 }
 
 static inline bool mem_cgroup_below_min(struct mem_cgroup *memcg)
 {
 	if (!mem_cgroup_supports_protection(memcg))
 		return false;
-
-	return READ_ONCE(memcg->memory.emin) >=
-		page_counter_read(&memcg->memory);
+#ifdef CONFIG_MEMCG
+	if (sysctl_mem_protection_use_min)
+		return READ_ONCE(memcg->memory.min) >=
+			page_counter_read(&memcg->memory);
+	else
+#endif
+		return READ_ONCE(memcg->memory.emin) >=
+			page_counter_read(&memcg->memory);
 }
 
 int mem_cgroup_charge(struct page *page, struct mm_struct *mm, gfp_t gfp_mask);

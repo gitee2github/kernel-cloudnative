@@ -83,6 +83,10 @@ extern unsigned int sysctl_offline_wait_interval;
 extern unsigned int sysctl_sched_autogroup_enabled;
 #endif
 
+#ifdef CONFIG_MEMCG
+extern unsigned int sysctl_mem_protection_use_min;
+#endif
+
 extern int sysctl_sched_rr_timeslice;
 extern int sched_rr_timeslice;
 

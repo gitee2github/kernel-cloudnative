@@ -2770,6 +2770,17 @@ static struct ctl_table kern_table[] = {
 		.extra2		= &one_thousand,
 	},
 #endif
+#ifdef CONFIG_MEMCG
+       {
+                .procname       = "mem_protection_use_min",
+                .data           = &sysctl_mem_protection_use_min,
+                .maxlen         = sizeof(int),
+                .mode           = 0600,
+                .proc_handler   = proc_dointvec_minmax,
+                .extra1         = SYSCTL_ZERO,
+                .extra2         = SYSCTL_ONE,
+       },
+#endif
 	{ }
 };
 
