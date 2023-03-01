@@ -415,30 +415,45 @@ abort:
  */
 static void select_bad_process(struct oom_control *oc)
 {
+	struct task_struct *p;
 	oc->chosen_points = LONG_MIN;
 
-	if (is_memcg_oom(oc))
-		mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
-	else if (memcg_prio_oom_select_bad_process(oc)) {
-
-		if (oc->chosen != 0 && oc->chosen != (void *)-1) {
-			printk("chosen task: %s(%d)\n",oc->chosen->comm, oc->chosen->pid);
+	if (is_memcg_oom(oc)) {
+		if (!memcg_prio_oom_tagged(oc)) {
+			mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
 			return;
 		}
-		printk("fall back to normal global oom flow\n");
-	} else {
-		struct task_struct *p;
+		pr_info("oom trigged by tagged memcg: ");
+		pr_cont_cgroup_path(oc->memcg->css.cgroup);
+	}
+
+	if (memcg_prio_oom_select_bad_process(oc)) {
+
+		if (oc->chosen != 0 && oc->chosen != (void *)-1) {
+			pr_info("chosen task: %s(%d)\n",oc->chosen->comm, oc->chosen->pid);
+			return;
+		}
+		pr_info("oc->chosen %llx \n", (int64_t)oc->chosen);
+		if (oc->chosen == (void*)-1)
+			return;
+
+		if (memcg_prio_oom_tagged(oc)) {
+			pr_info("fall back to normal memcg oom\n");
+			mem_cgroup_scan_tasks(oc->memcg, oom_evaluate_task, oc);
+			return;
+		}
+		pr_info("fall back to normal global oom\n");
+	}
 
 #ifdef CONFIG_MEMCG_QOS
-		if (memcg_low_priority_scan_tasks(oom_evaluate_task, oc))
-			return;
+	if (memcg_low_priority_scan_tasks(oom_evaluate_task, oc))
+		return;
 #endif
-		rcu_read_lock();
-		for_each_process(p)
-			if (oom_evaluate_task(p, oc))
-				break;
-		rcu_read_unlock();
-	}
+	rcu_read_lock();
+	for_each_process(p)
+		if (oom_evaluate_task(p, oc))
+			break;
+	rcu_read_unlock();
 }
 
 static int dump_task(struct task_struct *p, void *arg)
@@ -618,6 +633,7 @@ bool __oom_reap_task_mm(struct mm_struct *mm)
 			tlb_finish_mmu(&tlb, range.start, range.end);
 		}
 	}
+	pr_info("__oom_reap_task_mm: done by %s:%d\n",current->comm, current->pid);
 
 	return ret;
 }

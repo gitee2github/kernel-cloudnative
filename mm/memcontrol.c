@@ -1262,9 +1262,10 @@ again:
 		parent_mem = mem_cgroup_from_css(parent);
 
 		if (parent->nr_procs <= parent_mem->num_oom_skip) {
-			printk("\tskip memcg(0x%llx),nr_procs(%d) skip(%d)\n",
+			pr_info("\tskip memcg(0x%llx),nr_procs(%d) skip(%d) ",
 				(int64_t)parent_mem, parent->nr_procs,
 				parent_mem->num_oom_skip);
+			pr_cont_cgroup_path(parent_mem->css.cgroup);
 			break;
 		}
 		victim = parent;
@@ -1276,8 +1277,9 @@ again:
 			tmp = mem_cgroup_from_css(pos);
 
 			if (pos->nr_procs <= tmp->num_oom_skip) {
-				printk("\tskip memcg(0x%llx),nr_procs(%d) skip(%d)\n",
+				pr_info("\tskip memcg(0x%llx),nr_procs(%d) skip(%d) ",
 					(int64_t)tmp, pos->nr_procs, tmp->num_oom_skip);
+				pr_cont_cgroup_path(tmp->css.cgroup);
 				continue;
 			}
 			if (tmp->priority > chosen_priority)
@@ -1378,7 +1380,7 @@ struct mem_cgroup * memcg_get_prio_oom_root(void)
 	if (mem_cgroup_disabled())
 		return NULL;
 
-	if (prio_oom_root && prio_oom_root->use_priority_oom)
+	if (prio_oom_root && (prio_oom_root->use_priority_oom & MEMCG_OOM_PRIO_ROOT))
 		return prio_oom_root;
 
 	return NULL;
@@ -1390,7 +1392,7 @@ bool memcg_remove_prio_oom_root(struct mem_cgroup * memcg)
 		return false;
 
 	if (prio_oom_root == memcg) {
-		printk("remove prio oom root on memcg(0x%llx)\n", (int64_t)prio_oom_root);
+		pr_info("remove prio oom root on memcg(0x%llx)\n", (int64_t)prio_oom_root);
 		prio_oom_root->use_priority_oom = 0;
 		prio_oom_root = NULL;
 		return true;
@@ -1407,7 +1409,11 @@ bool memcg_prio_oom_select_bad_process(struct oom_control *oc)
 	if (!memcg || !css_tryget_online(&memcg->css))
 		return false;
 
-	printk("prio oom root 0x%llx\n", (int64_t)memcg);
+	pr_info("prio oom root (0x%llx) ", (int64_t)memcg);
+	pr_cont_cgroup_path(memcg->css.cgroup);
+
+	if (!oc->memcg)
+		pr_info("global oom\n");
 
 retry:
 
@@ -1418,7 +1424,8 @@ retry:
 		goto out;
 	}
 
-	printk("victim 0x%llx\n", (int64_t)victim);
+	pr_info("victim (0x%llx) nr_procs %d ", (int64_t)victim, victim->css.nr_procs);
+	pr_cont_cgroup_path(victim->css.cgroup);
 
 	mem_cgroup_scan_tasks(victim, oom_evaluate_task, oc);
 
@@ -5668,7 +5675,7 @@ static int mem_cgroup_priority_oom_write(struct cgroup_subsys_state *css,
 {
        struct mem_cgroup *memcg = mem_cgroup_from_css(css);
 
-       if (val != 1 && val != 0)
+       if (val > MEMCG_OOM_PRIO_ALL)
                return -EINVAL;
 
        if (memcg->use_priority_oom == val)
@@ -5678,21 +5685,35 @@ static int mem_cgroup_priority_oom_write(struct cgroup_subsys_state *css,
 
        mutex_lock(&oom_write_mutex);
        cgroup_path(css->cgroup, oom_root_path, PATH_MAX);
-       printk("(%s)(curr:%llx,root:%llx) changed to %lld by %s:%d\n", oom_root_path , \
-                       (int64_t)memcg , (int64_t)prio_oom_root, val, current->comm, current->pid);
+       pr_info("(%s)(curr:%llx,old:%llx) changed to %d by %s:%d\n", oom_root_path ,
+		       (int64_t)memcg , (int64_t)prio_oom_root, memcg->use_priority_oom,
+		       current->comm, current->pid);
 
-       if (val) {
+       if (val & MEMCG_OOM_PRIO_ROOT) {
+
+               if (prio_oom_root == memcg)
+                       goto out;
+
                if (prio_oom_root) {
-                       prio_oom_root->use_priority_oom = 0;
+                       prio_oom_root->use_priority_oom &= MEMCG_OOM_PRIO_TAGGED;
                }
                prio_oom_root = memcg;
 
        } else if (prio_oom_root == memcg) {
                prio_oom_root = NULL;
        }
+out:
        mutex_unlock(&oom_write_mutex);
 
        return 0;
+}
+
+bool memcg_prio_oom_tagged(struct oom_control *oc)
+{
+       if (oc->memcg && (oc->memcg->use_priority_oom & MEMCG_OOM_PRIO_TAGGED))
+               return true;
+
+       return false;
 }
 
 static s64 mem_cgroup_priority_read(struct cgroup_subsys_state *css,
@@ -5766,7 +5787,7 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.read_u64 = mem_cgroup_hierarchy_read,
 	},
 	{
-		.name = "oom_prio.root",
+		.name = "oom_prio.enable",
 		.write_u64 = mem_cgroup_priority_oom_write,
 		.read_u64 = mem_cgroup_priority_oom_read,
 	},
@@ -7362,7 +7383,7 @@ static struct cftype memory_files[] = {
 		.write_s64 = mem_cgroup_priority_write,
 	},
 	{
-		.name = "oom_prio.root",
+		.name = "oom_prio.enable",
 		.write_u64 = mem_cgroup_priority_oom_write,
 		.read_u64 = mem_cgroup_priority_oom_read,
 	},
