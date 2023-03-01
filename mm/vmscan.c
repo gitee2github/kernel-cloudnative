@@ -171,6 +171,10 @@ struct scan_control {
 #define prefetchw_prev_lru_page(_page, _base, _field) do { } while (0)
 #endif
 
+#ifdef CONFIG_MEMCG
+unsigned int sysctl_mem_protection_use_min = 0;
+#endif
+
 /*
  * From 0 .. 200.  Higher means more swappy.
  */
