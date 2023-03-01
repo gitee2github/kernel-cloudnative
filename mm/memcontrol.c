@@ -187,6 +187,9 @@ struct mem_cgroup_event {
 
 static void mem_cgroup_threshold(struct mem_cgroup *memcg);
 static void mem_cgroup_oom_notify(struct mem_cgroup *memcg);
+static ssize_t memory_max_write_job(struct kernfs_open_file *of,
+				char *buf, size_t nbytes, loff_t off);
+static int memory_max_show(struct seq_file *m, void *v);
 
 /* Stuffs for move charges at task migration. */
 /*
@@ -5406,6 +5409,51 @@ out_unlock:
 }
 #endif
 
+static ssize_t memory_max_write_job(struct kernfs_open_file *of,
+		char *buf, size_t nbytes, loff_t off)
+{
+	struct mem_cgroup *memcg = mem_cgroup_from_css(of_css(of));
+	unsigned int nr_reclaims = MAX_RECLAIM_RETRIES;
+	bool drained = false;
+	unsigned long max;
+	int err;
+	buf = strstrip(buf);
+	err = page_counter_memparse(buf, "max", &max);
+	if (err)
+		return err;
+	mutex_lock(&memcg_max_mutex);
+	xchg(&memcg->memory.max, max);
+	mutex_unlock(&memcg_max_mutex);
+	for (;;) {
+		unsigned long nr_pages = page_counter_read(&memcg->memory);
+		if (nr_pages <= max)
+			break;
+		if (signal_pending(current)) {
+			err = -EINTR;
+			break;
+		}
+		if (!drained) {
+			drain_all_stock(memcg);
+			drained = true;
+			continue;
+		}
+		if (nr_reclaims) {
+			if (!try_to_free_mem_cgroup_pages(memcg, nr_pages - max,
+						GFP_KERNEL, true))
+				nr_reclaims--;
+			continue;
+		}
+		memcg_memory_event(memcg, MEMCG_OOM);
+		if (!mem_cgroup_out_of_memory(memcg, GFP_KERNEL, 0))
+			break;
+	}
+	setup_memcg_wmark(memcg);
+	if (!is_wmark_ok(memcg, true))
+		queue_work(memcg_wmark_wq, &memcg->wmark_work);
+	memcg_wb_domain_size_changed(memcg);
+	return nbytes;
+}
+
 static struct cftype mem_cgroup_legacy_files[] = {
 	{
 		.name = "usage_in_bytes",
@@ -5423,6 +5471,12 @@ static struct cftype mem_cgroup_legacy_files[] = {
 		.private = MEMFILE_PRIVATE(_MEM, RES_LIMIT),
 		.write = mem_cgroup_write,
 		.read_u64 = mem_cgroup_read_u64,
+	},
+	{
+		.name = "job.limit_in_bytes",
+		.private = CFTYPE_NOT_ON_ROOT,
+		.write = memory_max_write_job,
+		.seq_show = memory_max_show,
 	},
 	{
 		.name = "soft_limit_in_bytes",
