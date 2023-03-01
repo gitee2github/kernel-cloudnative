@@ -1278,7 +1278,7 @@ again:
 		parent_mem = mem_cgroup_from_css(parent);
 
 		if (parent->nr_procs <= parent_mem->num_oom_skip) {
-			pr_info("\tskip memcg(0x%llx),nr_procs(%d) skip(%d) ",
+			pr_info("==>skip parent memcg(0x%llx),nr_procs(%d) skip(%d) ",
 				(int64_t)parent_mem, parent->nr_procs,
 				parent_mem->num_oom_skip);
 			pr_cont_cgroup_path(parent_mem->css.cgroup);
@@ -1293,7 +1293,7 @@ again:
 			tmp = mem_cgroup_from_css(pos);
 
 			if (pos->nr_procs <= tmp->num_oom_skip) {
-				pr_info("\tskip memcg(0x%llx),nr_procs(%d) skip(%d) ",
+				pr_info("==>skip child memcg(0x%llx),nr_procs(%d) skip(%d) ",
 					(int64_t)tmp, pos->nr_procs, tmp->num_oom_skip);
 				pr_cont_cgroup_path(tmp->css.cgroup);
 				continue;
@@ -1405,29 +1405,30 @@ bool memcg_remove_prio_oom_root(struct mem_cgroup * memcg)
 
 bool memcg_prio_oom_select_bad_process(struct oom_control *oc)
 {
-	struct mem_cgroup *memcg, *victim, *iter;
+	struct mem_cgroup *prio_root, *victim, *iter;
 
-	memcg = memcg_get_prio_oom_root();
+	prio_root = memcg_get_prio_oom_root();
 
-	if (!memcg || !css_tryget_online(&memcg->css))
+	if (!prio_root || !css_tryget_online(&prio_root->css))
 		return false;
 
-	pr_info("prio oom root (0x%llx) ", (int64_t)memcg);
-	pr_cont_cgroup_path(memcg->css.cgroup);
+	pr_info("prio root (0x%llx) nr_procs(%d)", (int64_t)prio_root, prio_root->css.nr_procs);
+	pr_cont_cgroup_path(prio_root->css.cgroup);
 
 	if (!oc->memcg)
 		pr_info("global oom\n");
 
 retry:
 
-	victim = mem_cgroup_select_victim_cgroup(memcg);
+	victim = mem_cgroup_select_victim_cgroup(prio_root);
 	if (!victim) {
 		if (oc->num_skip)
 			oc->chosen = (void *)-1UL;
 		goto out;
 	}
 
-	pr_info("victim (0x%llx) nr_procs %d ", (int64_t)victim, victim->css.nr_procs);
+	pr_info("victim (0x%llx) nr_procs (%d/%d) ", (int64_t)victim, victim->css.nr_procs,
+		prio_root->css.nr_procs);
 	pr_cont_cgroup_path(victim->css.cgroup);
 
 	mem_cgroup_scan_tasks(victim, prio_oom_evaluate_task, oc);
@@ -1435,11 +1436,16 @@ retry:
 	css_put(&victim->css);
 	if (oc->chosen == (void *)-1UL)
 		goto out;
-	if (!oc->chosen && victim != memcg) {
+	if (!oc->chosen && victim != prio_root) {
 		do_mem_cgroup_account_oom_skip(victim, oc);
 		goto retry;
 	}
 out:
+	if (!oc->chosen && prio_root->css.nr_procs >= 2) {
+		pr_info("change chosen to -1, nr_procs(%d) \n", prio_root->css.nr_procs);
+		oc->chosen = (void *)-1UL;
+	}
+
 	/* See commets in mem_cgroup_account_oom_skip() */
 	while (oc->reset_list) {
 		iter = oc->reset_list;
@@ -1448,7 +1454,7 @@ out:
 		iter->next_reset = NULL;
 		css_put(&iter->css);
 	}
-	css_put(&memcg->css);
+	css_put(&prio_root->css);
 	return true;
 }
 /**
