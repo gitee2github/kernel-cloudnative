@@ -5447,9 +5447,6 @@ static ssize_t memory_max_write_job(struct kernfs_open_file *of,
 		if (!mem_cgroup_out_of_memory(memcg, GFP_KERNEL, 0))
 			break;
 	}
-	setup_memcg_wmark(memcg);
-	if (!is_wmark_ok(memcg, true))
-		queue_work(memcg_wmark_wq, &memcg->wmark_work);
 	memcg_wb_domain_size_changed(memcg);
 	return nbytes;
 }
